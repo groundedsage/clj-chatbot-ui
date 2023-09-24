@@ -4,19 +4,6 @@ This is a clone of [chatbot-ui](https://github.com/mckaywrigley/chatbot-ui) buil
 
 I have made some minor modifications to the UI and UX and will do a full redesign once all the base issues are resolved.
 
-## Preparations required to develop
-
-This currently depends on a local build of Datahike.
-
-You will need to clone the [repository](https://github.com/replikativ/datahike)
-
-`git checkout 638-improve-connection-handling` to switch to the branch used for this build.
-
-Run `bb jar` to build it. 
-
-Update the jar filename and location in `deps.edn`
-`io.replikativ/datahike {:local/root "../../scratch/datahike/target/datahike-0.6.1587.jar"}`
-
 ## Run the application
 
 `yarn` to install Tailwind and other javasscript dependencies

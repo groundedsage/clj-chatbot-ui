@@ -9,8 +9,8 @@
         org.clojure/clojurescript {:mvn/version "1.11.60"}
         org.clojure/tools.logging {:mvn/version "1.2.4"}
         ch.qos.logback/logback-classic {:mvn/version "1.2.11"}
-       ;;  datascript/datascript {:mvn/version "1.5.2"}
-        io.replikativ/datahike {:local/root "../../scratch/datahike/target/datahike-0.6.1587.jar"}
+        io.replikativ/datahike {:git/url "https://github.com/groundedsage/datahike.git"
+                                :sha "df766aae7e6aaca63e04296560f1b66f1e1a3e3d"}
         io.replikativ/datahike-jdbc {:mvn/version "0.1.45"}
         nano-id/nano-id {:mvn/version "1.0.0"}
         net.clojars.wkok/openai-clojure {:mvn/version "0.10.0"}

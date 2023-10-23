@@ -10,7 +10,10 @@ I have made some minor modifications to the UI and UX and will do a full redesig
 
 `yarn build:tailwind:dev` to build the css watch and build
 
-In a seperate terminal window run this command to start the application
+We are using a branch of Datahike so you will have to prepare the library first.
+
+`clj -X:deps prep`
+
 
 ```
 $ clj -A:dev -X user/main

@@ -1,7 +1,7 @@
 {:paths ["src" "resources"]
-  :deps/prep-lib {:alias :build
-                  :fn compile
-                  :ensure "target/classes"}}
+ :deps/prep-lib {:alias :build
+                 :fn compile
+                 :ensure "target/classes"}
  :deps {com.hyperfiddle/electric {:mvn/version "v2-alpha-422-g96e5c0a5"}
         com.hyperfiddle/rcf {:mvn/version "20220926-202227"}
         info.sunng/ring-jetty9-adapter

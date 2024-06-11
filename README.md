@@ -6,24 +6,20 @@ I have made some minor modifications to the UI and UX and will do a full redesig
 
 ## Run the application
 
-`yarn` to install Tailwind and other javasscript dependencies
+`npm install` to install Tailwind and other javasscript dependencies
 
-`yarn build:tailwind:dev` to build the css watch and build
+`npm run build:tailwind:dev` to build the css watch and build
 
-We are using a branch of Datahike so you will have to prepare the library first.
+Dev build:
 
-`clj -X:deps prep`
+* Shell: `clj -A:dev -X dev/-main`, or repl: `(dev/-main)`
+* http://localhost:8080
+* Electric root function: [src/electric_starter_app/main.cljc](src/electric_starter_app/main.cljc)
+* Hot code reloading works: edit -> save -> see app reload in browser
 
+Prod build:
 
-```
-$ clj -A:dev -X user/main
-
-Starting Electric compiler and server...
-shadow-cljs - server version: 2.20.1 running at http://localhost:9630
-shadow-cljs - nREPL server started on port 9001
-[:app] Configuring build.
-[:app] Compiling ...
-[:app] Build completed. (224 files, 0 compiled, 0 warnings, 1.93s)
-
-👉 App server available at http://0.0.0.0:8080
+```shell
+clj -X:build:prod build-client
+clj -M:prod -m prod
 ```

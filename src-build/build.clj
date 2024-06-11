@@ -1,62 +1,65 @@
 (ns build
-  "build electric.jar library artifact and demos"
-  (:require [clojure.tools.build.api :as b]
-            [org.corfield.build :as bb]
-            [shadow.cljs.devtools.api :as shadow-api] ; so as not to shell out to NPM for shadow
-            [shadow.cljs.devtools.server :as shadow-server]
-            ))
+  (:require
+   [clojure.tools.build.api :as b]
+   [clojure.tools.logging :as log]
+   [shadow.cljs.devtools.api :as shadow-api]
+   [shadow.cljs.devtools.server :as shadow-server]))
 
-(def lib 'com.hyperfiddle/electric)
-(def version (b/git-process {:git-args "describe --tags --long --always --dirty"}))
-(def basis (b/create-basis {:project "deps.edn"}))
+(def electric-user-version (b/git-process {:git-args "describe --tags --long --always --dirty"}))
 
-(defn clean [opts]
-  (bb/clean opts))
+(defn build-client ; invoke with `clj -X ...`
+  "build Electric app client, invoke with -X
+  e.g. `clojure -X:build:prod build-client :debug false :verbose false :optimize true`
+  Note: Electric shadow compilation requires application classpath to be available, so do not use `clj -T`"
+  [argmap]
+  (let [{:keys [optimize debug verbose]
+         :or {optimize true, debug false, verbose false}
+         :as config}
+        (assoc argmap :hyperfiddle.electric/user-version electric-user-version)]
+    (b/delete {:path "resources/public/chat_app/js"})
+    (b/delete {:path "resources/electric-manifest.edn"})
+
+    ; bake user-version into artifact, cljs and clj
+    (b/write-file {:path "resources/electric-manifest.edn" :content config})
+
+    ; "java.lang.NoClassDefFoundError: com/google/common/collect/Streams" is fixed by
+    ; adding com.google.guava/guava {:mvn/version "31.1-jre"} to deps,
+    ; see https://hf-inc.slack.com/archives/C04TBSDFAM6/p1692636958361199
+    (shadow-server/start!)
+    (as->
+      (shadow-api/release :prod
+        {:debug   debug,
+         :verbose verbose,
+         :config-merge
+         [{:compiler-options {:optimizations (if optimize :advanced :simple)}
+           :closure-defines  {'hyperfiddle.electric-client/ELECTRIC_USER_VERSION electric-user-version}}]})
+      shadow-status (assert (= shadow-status :done) "shadow-api/release error")) ; fail build on error
+    (shadow-server/stop!)
+    (log/info "Client build successful. Version:" electric-user-version)))
 
 (def class-dir "target/classes")
-(defn default-jar-name [{:keys [version] :or {version version}}]
-  (format "target/%s-%s-standalone.jar" (name lib) version))
 
-(defn clean-cljs [_]
-  (b/delete {:path "resources/public/js"}))
+(defn uberjar
+  [{:keys [optimize debug verbose ::jar-name, ::skip-client]
+    :or {optimize true, debug false, verbose false, skip-client false}
+    :as args}]
+  ; careful, shell quote escaping combines poorly with clj -X arg parsing, strings read as symbols
+  (log/info `uberjar (pr-str args))
+  (b/delete {:path "target"})
 
-(defn build-client
-  "Prod optimized ClojureScript client build. (Note: in dev, the client is built 
-on startup)"
-  [{:keys [optimize debug verbose version]
-    :or {optimize true, debug false, verbose false, version version}}]
-  (println "Building client. Version:" version)
-  (shadow-server/start!)
-  (shadow-api/release :prod {:debug debug,
-                             :verbose verbose,
-                             :config-merge [{:compiler-options {:optimizations (if optimize :advanced :simple)}
-                                             :closure-defines {'hyperfiddle.electric-client/VERSION version}}]})
-  (shadow-server/stop!))
+  (when-not skip-client
+    (build-client {:optimize optimize, :debug debug, :verbose verbose}))
 
-(defn uberjar [{:keys [jar-name version optimize debug verbose]
-                :or   {version version, optimize true, debug false, verbose false}}]
-  (println "Cleaning up before build")
-  (clean nil)
+  (b/copy-dir {:target-dir class-dir :src-dirs ["src" "src-prod" "resources"]})
+  (let [jar-name (or (some-> jar-name str) ; override for Dockerfile builds to avoid needing to reconstruct the name
+                   (format "target/electricfiddle-%s.jar" electric-user-version))
+        aliases [:prod]]
+    (log/info `uberjar "included aliases:" aliases)
+    (b/uber {:class-dir class-dir
+             :uber-file jar-name
+             :basis     (b/create-basis {:project "deps.edn" :aliases aliases})})
+    (log/info jar-name)))
 
-  (println "Cleaning cljs compiler output")
-  (clean-cljs nil)
-
-  (build-client {:optimize optimize, :debug debug, :verbose verbose, :version version})
-
-  (println "Bundling sources")
-  (b/copy-dir {:src-dirs   ["src" "resources"]
-               :target-dir class-dir})
-
-  (println "Compiling server. Version:" version)
-  (b/compile-clj {:basis      basis
-                  :src-dirs   ["src"]
-                  :ns-compile '[prod]
-                  :class-dir  class-dir})
-
-  (println "Building uberjar")
-  (b/uber {:class-dir class-dir
-           :uber-file (str (or jar-name (default-jar-name {:version version})))
-           :basis     basis
-           :main      'prod}))
-
-(defn noop [_])                         ; run to preload mvn deps
+;; clj -X:build:prod build-client
+;; clj -X:build:prod uberjar :build/jar-name "app.jar"
+;; java -cp app.jar clojure.main -m prod

@@ -1,8 +1,8 @@
 {
   "name": "electric-chat",
   "scripts": {
-    "build:tailwind:dev": "npx tailwindcss -i ./resources/input.css -o ./resources/public/styles/chat.css --watch",
-    "build:tailwind": "npx tailwindcss -i ./resources/input.css -o ./resources/public/styles/chat.css --minify"
+    "build:tailwind:dev": "npx tailwindcss -i ./resources/input.css -o ./resources/public/chat_app/styles.css --watch",
+    "build:tailwind": "npx tailwindcss -i ./resources/input.css -o ./resources/public/chat_app/styles.css --minify"
   },
   "devDependencies": {
     "shadow-cljs": "2.22.9",

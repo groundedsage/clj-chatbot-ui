@@ -1,20 +1,12 @@
-{:deps {:aliases [:dev]}
- :nrepl {:port 9001}
- :builds
- {:dev
-  {:target :browser
-   :devtools {:watch-dir "resources/public" ; live reload CSS
-              :hud #{:errors :progress}
-              :ignore-warnings true} ; warnings don't prevent hot-reload
-   :output-dir "resources/public/js"
-   :asset-path "/js"
-   :modules {:main {:entries [user]
-                    :init-fn user/start!}}
-   :build-hooks [(shadow.cljs.build-report/hook {:output-to "target/build_report.html"})
-                 (user/rcf-shadow-hook)]}
-  :prod
-  {:target :browser
-   :output-dir "resources/public/js"
-   :asset-path "/js"
-   :module-hash-names true
-   :modules {:main {:entries [user] :init-fn user/start!}}}}}
+{:builds
+ {:dev  {:target :browser
+         :devtools {:loader-mode :default, :watch-dir "resources/public/chat_app"}
+         :output-dir "resources/public/chat_app/js"
+         :asset-path "/js"
+         :modules {:main {:entries [dev] :init-fn dev/start!}}
+         :build-hooks [(hyperfiddle.electric.shadow-cljs.hooks/reload-clj)]}
+  :prod {:target :browser
+         :output-dir "resources/public/chat_app/js"
+         :asset-path "/js"
+         :modules {:main {:entries [prod] :init-fn prod/start!}}
+         :module-hash-names true}}}

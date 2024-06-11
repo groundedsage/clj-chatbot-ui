@@ -14,4 +14,5 @@ report.html
 .clj-kondo
 /target
 app.jar
-resources/public/styles/chat.css
+resources/public/chat_app/styles.css
+resources/public/chat_app/js

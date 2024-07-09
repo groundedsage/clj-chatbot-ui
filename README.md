@@ -10,6 +10,19 @@ I have made some minor modifications to the UI and UX and will do a full redesig
 
 `npm run build:tailwind:dev` to build the css watch and build
 
+Entities are collected from `config.edn`  
+
+```clojure
+{:all-entities-image ""
+ :entities [{:name ""
+             :full-name ""
+             :image ""
+             :prompt ""}
+            {:name ""
+             :image ""
+             :prompt "}]}
+```
+
 Dev build:
 
 * Shell: `clj -A:dev -X dev/-main`, or repl: `(dev/-main)`

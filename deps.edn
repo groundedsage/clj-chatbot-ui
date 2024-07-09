@@ -1,8 +1,9 @@
-{:deps    {io.replikativ/datahike {:mvn/version "0.6.1562"}
+{:deps    {io.replikativ/datahike {:mvn/version "0.6.1559"}
            net.clojars.wkok/openai-clojure {:mvn/version "0.10.0"}
            nano-id/nano-id {:mvn/version "1.0.0"} 
            io.github.nextjournal/markdown {:mvn/version "0.5.144"}
            hiccup/hiccup {:mvn/version "2.0.0-RC1"}
+           markdown-clj/markdown-clj {:mvn/version "1.12.1"}
            ;; Electric Dependencies
            com.hyperfiddle/electric       {:git/url "https://github.com/hyperfiddle/electric" :git/sha "b32ac98df7d7ec87f225d47354671be172ffa87e"}
            ring/ring                      {:mvn/version "1.11.0"} ; comes with Jetty

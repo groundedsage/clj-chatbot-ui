@@ -16,3 +16,5 @@ report.html
 app.jar
 resources/public/chat_app/styles.css
 resources/public/chat_app/js
+resources/public/chat_app/agents
+config.edn

@@ -725,7 +725,7 @@
                           (dom/text e))
                         (dom/p (dom/props {:class "w-1/3"})
                           (dom/text a))
-                        (dom/p (dom/props {:class "w-1/3"})
+                        (dom/p (dom/props {:class "w-1/3 text-ellipsis overflow-hidden"})
                           (dom/text v)) 
                         (dom/p (dom/props {:class "w-8"})
                           (dom/text asserted))))))))))))))
@@ -741,7 +741,7 @@
                                       results))
           db-data (let [results (d/q '[:find ?e ?a ?v ?tx ?asserted
                                        :where
-                                       [?e ?a ?v ?tx ?asserted]] db)]
+                                       [?e ?a ?v ?tx ?asserted]] (d/history db))]
                     (reverse (sort (group-by-tx results))))]
       (e/client
         (dom/div (dom/props {:class "absolute top-0 right-0 h-48 w-1/2 bg-red-500 overflow-auto"}) 

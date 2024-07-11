@@ -29,11 +29,7 @@
 (e/def db) ; injected database ref; Electric defs are always dynamic
 
 (def dh-schema
-  [{:db/ident       :counter/value
-    :db/valueType   :db.type/long
-    :db/cardinality :db.cardinality/one}
-   ;; End debug
-   {:db/ident :folder/id
+  [{:db/ident :folder/id
     :db/valueType :db.type/string
     :db/cardinality :db.cardinality/one
     :db/unique :db.unique/identity}
@@ -77,9 +73,8 @@
 
 ;; transact schema to the db
 #?(:clj (defonce dh-schema-tx (d/transact !dh-conn {:tx-data dh-schema})))
-#?(:clj (defonce debug-tx (d/transact !dh-conn [{:counter 0}])))
 
-#?(:cljs (defonce !view-main (atom :pre-conversation)))
+#?(:cljs (defonce !view-main (atom :entity-selection)))
 #?(:cljs (defonce !conversation-entity (atom nil)))
 #?(:cljs (defonce !view-main-prev (atom nil)))
 #?(:cljs (defonce view-main-watcher (add-watch !view-main :main-prev (fn [_k _r os _ns]
@@ -232,7 +227,7 @@
                                                   ;; sys-prompt @!system-prompt
                                                   ]
                                               (reset! !active-conversation convo-id)
-                                              ;; (reset! !view-main :conversation)
+                                              (reset! !view-main :conversation)
                                               (e/server (let [time-point (System/currentTimeMillis)
                                                               model selected-model
                                                               temp temperature
@@ -335,6 +330,22 @@
                             (dom/button (dom/props {:class "invisible group-hover:visible focus:visible text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"})
                               (set! (.-innerHTML dom/node) delete-icon)))))))))
 
+(e/defn PreConversation []
+  (e/client
+    (let [entity (first (filter #(= (:name %) conversation-entity) (:entities entities-cfg)))
+          {:keys [prompt image full-name name]} entity]
+      (dom/div (dom/props {:class "flex flex-col stretch justify-center items-center h-full lg:max-w-3xl mx-auto gap-4"})
+        (dom/div (dom/props {:class "flex flex-col gap-8 items-center"})
+          (dom/img (dom/props {:class "w-48 mx-auto rounded-full"
+                               :src image}))
+          (dom/h1 (dom/props {:class "text-2xl"}) (dom/text (or full-name name)))
+          (dom/p (dom/text "Pre conversation"))
+          ;; Uncomment to check prompt
+          #_(dom/p (dom/text (e/server (slurp (clojure.java.io/resource prompt)))))) 
+
+        (PromptInput. {:convo-id (nano-id)
+                       :messages nil #_messages})))))
+
 (e/defn Conversation []
   (e/client
     (let [convo-id active-conversation
@@ -377,11 +388,14 @@
           edit-conversation (e/watch !edit-conversation)]
       (dom/div (dom/props {:class "pt-2 flex-grow"})
         (dom/on "dragover" (e/fn [e] (.preventDefault e)))
-        (dom/on "dragenter" (e/fn [_] (.requestAnimationFrame js/window
-                                        #(reset! !folder-dragged-to :default))))
+        (dom/on "dragenter" (e/fn [_]
+                              #_(.requestAnimationFrame js/window
+                                  #(reset! !folder-dragged-to :default))))
         (dom/on "dragleave" (e/fn [_] (fn [_] (reset! !folder-dragged-to nil))))
         (dom/on "drop" (e/fn [_]
+                          (println "drop ")
                          (let [convo-id @!convo-dragged]
+                           (println "convo-id: " convo-id)
                            (e/server
                              (e/offload
                                #(do
@@ -409,7 +423,10 @@
                       (dom/on "click" (e/fn [_]
                                         (reset! !active-conversation convo-id)
                                         (reset! !view-main :conversation)))
-                      (dom/on "dragstart" (e/fn [_] (reset! !convo-dragged convo-id)))
+                      (dom/on "dragstart" (e/fn [_] 
+                                            (println "setting convo-dragged: " convo-id)
+                                            (reset! !convo-dragged convo-id)
+                                            (println "set convo-dragged: " @!convo-dragged))) 
                       (dom/div (dom/props {:class "relative max-h-5 flex-1 overflow-hidden text-ellipsis whitespace-nowrap break-all text-left text-[12.5px] leading-3 pr-1"})
                         (dom/text topic)))
                     (dom/div (dom/props {:class "flex w-full items-center gap-3 rounded-lg bg-[#343541]/90 p-3"})
@@ -436,8 +453,9 @@
                         (if editing?
                           (dom/on "click" (e/fn [_]
                                             (case (:action edit-conversation)
-                                              :delete (do
-                                                        (e/server (e/offload #(d/transact !dh-conn [(d/transact !dh-conn [[:db.fn/retractEntity eid]])]))
+                                              :delete (do 
+                                                        (e/server 
+                                                          (e/offload #(d/transact !dh-conn [[:db/retract eid :conversation/id]])) 
                                                           nil)
                                                         (when (= convo-id @!active-conversation)
                                                           (reset! !active-conversation nil))
@@ -482,17 +500,23 @@
                                                 (swap! !open-folders conj folder-id)
                                                 (swap! !open-folders disj folder-id))))
                     (dom/on "dragover" (e/fn [e] (.preventDefault e)))
-                    (dom/on "dragenter" (e/fn [_] (.requestAnimationFrame js/window
-                                                    #(reset! !folder-dragged-to folder-id))))
-                    (dom/on "dragleave" (e/fn [_] (fn [_] (reset! !folder-dragged-to nil))))
+                    (dom/on "dragenter" (e/fn [_] 
+                                          (.requestAnimationFrame js/window
+                                            (fn []
+                                               (println "drag enter 1: " @!convo-dragged)
+                                               (println "folder-id 1: " folder-id)
+                                               (reset! !folder-dragged-to folder-id)))))
+                    #_(dom/on "dragleave" (e/fn [_]
+                                          (reset! !folder-dragged-to nil)))
                     (dom/on "drop" (e/fn [_]
-                                     (let [convo-id @!convo-dragged]
+                                     (println "drop " )
+                                     #_(let [convo-id @!convo-dragged]
                                        (e/server (e/offload #(d/transact !dh-conn [{:db/id [:conversation/id convo-id]
                                                                                      :conversation/folder folder-id}]))
                                          nil))
-                                     (swap! !open-folders conj folder-id)
-                                     (reset! !folder-dragged-to nil)
-                                     (reset! !convo-dragged nil)))
+                                     #_(swap! !open-folders conj folder-id)
+                                     #_(reset! !folder-dragged-to nil)
+                                     #_(reset! !convo-dragged nil)))
                     (dom/div
                       (set! (.-innerHTML dom/node) (if-not open-folder? folder-arrow-icon folder-arrow-icon-down)))
                     (dom/text name))
@@ -584,7 +608,7 @@
           (dom/div (dom/props {:class "flex items-center"})
             (dom/button (dom/props {:class "text-sidebar flex w-[190px] flex-shrink-0 cursor-pointer select-none items-center gap-3 rounded-md border border-white/20 p-3 text-white transition-colors duration-200 hover:bg-gray-500/10"})
               (set! (.-innerHTML dom/node) new-chat-icon)
-              (dom/on "click" (e/fn [_] (reset! !view-main :pre-conversation)))
+              (dom/on "click" (e/fn [_] (reset! !view-main :entity-selection)))
               (dom/text "New Chat")) 
             (ui/button
               (e/fn []
@@ -597,14 +621,18 @@
               (set! (.-innerHTML dom/node) search-icon)))
 
           (ui/button
-            (e/fn []) 
+            (e/fn []
+              (reset! !active-conversation nil)
+              (reset! !view-main :pre-conversation)) 
             (let [entity (first (:entities entities-cfg))]
               (dom/div (dom/props {:class "text-neutral-400 hover:text-neutral-100 hover:bg-[#343541]/90 flex items-center gap-4 py-2 px-4 rounded"})
                 (dom/img (dom/props {:class "w-8 rounded-full"
                                      :src (:image entity)}))
                 (dom/p (dom/text (:name entity))))))
           (ui/button
-            (e/fn [] (reset! !view-main :pre-conversation))
+            (e/fn [] 
+              (reset! !view-main :entity-selection)
+              (reset! !active-conversation nil))
             (dom/div (dom/props {:class "text-neutral-400 hover:text-neutral-100 hover:bg-[#343541]/90 flex items-center gap-4 py-2 px-4 rounded"})
               (dom/img (dom/props {:class "w-8 rounded-full"
                                    :src (:all-entities-image entities-cfg)}))
@@ -644,12 +672,17 @@
                 (dom/text "Are you sure?")
                 (dom/div (dom/props {:class "absolute right-1 z-10 flex text-gray-300"})
                   (ui/button (e/fn []
+                               (println "clearing all conversations")
                                (e/server
-                                 (let [convo-eids (map :e (d/datoms @!dh-conn :avet :conversation/id))
-                                       folder-eids (map :e (d/datoms @!dh-conn :avet :folder/id))
-                                       retraction-ops (concat (map (fn [eid] [:db.fn/retractEntity eid]) convo-eids)
-                                                        (map (fn [eid] [:db.fn/retractEntity eid]) folder-eids))]
-                                   (d/transact !dh-conn retraction-ops))
+                                 (println "serverside call")
+                                 (e/offload
+                                   #(let [convo-eids (map :e (d/datoms @!dh-conn :avet :conversation/id))
+                                          folder-eids (map :e (d/datoms @!dh-conn :avet :folder/id))
+                                          retraction-ops
+                                          (concat
+                                            (mapv (fn [eid] [:db.fn/retractEntity eid :conversation/id]) convo-eids)
+                                            (mapv (fn [eid] [:db.fn/retractEntity eid :folder/id]) folder-eids))]
+                                      (d/transact !dh-conn retraction-ops))) 
                                  nil)
                                (reset! !active-conversation nil)
                                (reset! !clear-conversations? false))
@@ -712,13 +745,17 @@
                     (reverse (sort (group-by-tx results))))]
       (e/client
         (dom/div (dom/props {:class "absolute top-0 right-0 h-48 w-1/2 bg-red-500 overflow-auto"}) 
+          (dom/p (dom/text "Active conversation: " active-conversation))
+          (dom/p (dom/text "View main: " view-main))
+          (dom/p (dom/text "Convo dragged: " convo-dragged))
+          (dom/p (dom/text "Folder dragged to : " folder-dragged-to))
           (TreeView. db-data))))))
 
 (e/defn EntitySelector []
   (e/client 
     (let [EntityCard (e/fn [title img-src]
                        (ui/button (e/fn [] 
-                                    (reset! !view-main :conversation)
+                                    (reset! !view-main :pre-conversation)
                                     (reset! !conversation-entity title))
                          (dom/props {:class "flex flex-col gap-4 items-center bg-[#202123] hover:scale-110 hover:shadow-lg shadow rounded p-4 transition-all ease-in duration-150"})
                          (dom/img (dom/props {:class "w-48 mx-auto rounded"
@@ -732,10 +769,15 @@
 (e/defn MainView []
   (e/client
     (dom/div (dom/props {:class "flex flex-1 h-full w-full"})
+      (dom/on "drop" (e/fn [_] (println "drop ")))
+      (dom/on "dragdrop" (e/fn [_] (println "drop "))) 
+      (dom/on "dragenter" (e/fn [_] (println "enter main")))
+      (dom/on "dragleave" (e/fn [_] (println "leave main")))
       (dom/div (dom/props {:class "relative flex-1 overflow-hidden bg-white dark:bg-[#343541]"})
         (dom/div (dom/props {:class "max-h-full overflow-x-hidden h-full"})
           (case view-main
-            :pre-conversation (EntitySelector.)
+            :entity-selection (EntitySelector.)
+            :pre-conversation (PreConversation.)
             :conversation (Conversation.))
           (when debug? (DBInspector.)))))))
 

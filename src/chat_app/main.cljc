@@ -678,10 +678,14 @@
                                  (e/offload
                                    #(let [convo-eids (map :e (d/datoms @!dh-conn :avet :conversation/id))
                                           folder-eids (map :e (d/datoms @!dh-conn :avet :folder/id))
-                                          retraction-ops
-                                          (concat
-                                            (mapv (fn [eid] [:db.fn/retractEntity eid :conversation/id]) convo-eids)
-                                            (mapv (fn [eid] [:db.fn/retractEntity eid :folder/id]) folder-eids))]
+                                          m-eids  (set (map first (d/q '[:find ?m
+                                                                         :in $ [?convo-id ...]
+                                                                         :where
+                                                                         [?convo-id :conversation/messages ?m]] db convo-eids)))
+                                          retraction-ops (concat
+                                                           (mapv (fn [eid] [:db.fn/retractEntity eid :conversation/id]) convo-eids)
+                                                           (mapv (fn [eid] [:db.fn/retractEntity eid :folder/id]) m-eids)
+                                                           (mapv (fn [eid] [:db.fn/retractEntity eid :folder/id]) folder-eids))]
                                       (d/transact !dh-conn retraction-ops))) 
                                  nil)
                                (reset! !active-conversation nil)

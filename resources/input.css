@@ -32,9 +32,9 @@ html, body {
   height: 6px;
 }
 
-html {
+/* html {
   background: #202123;
-}
+} */
 
 @media (max-width: 720px) {
   pre {

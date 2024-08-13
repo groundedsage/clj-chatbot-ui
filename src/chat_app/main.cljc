@@ -19,6 +19,8 @@
 ;; Can possibly remove the snapshot usage in next version of Electric
 ;; https://clojurians.slack.com/archives/C7Q9GSHFV/p1693947757659229?thread_ts=1693946525.050339&cid=C7Q9GSHFV
 
+#?(:clj (def api-key (slurp "api-key.txt")))
+
 (e/def entities-cfg (e/server (read-string (slurp "config.edn"))))
 
 #?(:clj (def cfg {:store {:backend :mem :id "schemaless"}
@@ -197,6 +199,14 @@
             (catch Exception e
               (println "This is the exception: " e)))))
 
+#?(:clj (defn get-chat-completion [convo-id msg-list model api-key]
+          (println convo-id msg-list model api-key)
+          (d/transact !dh-conn [{:conversation/id convo-id
+                                 :conversation/messages [{:message/id (nano-id)
+                                                          :message/text "echo"
+                                                          :message/role :assistant
+                                                          :message/created (System/currentTimeMillis)}]}])))
+
 (e/defn PromptInput [{:keys [convo-id messages selected-model temperature]}]
   (e/client
   ;; TODO: add the system prompt to the message list
@@ -238,6 +248,7 @@
                                                               v-str v ; TODO: figure out why this needs to be done. Seems to be breaking without it.
                                                               ]
                                                           #_(stream-chat-completion convo-id message-list model api-key)
+                                                          (e/offload #(get-chat-completion convo-id message-list model api-key)) 
                                                           (e/offload #(do (d/transact !dh-conn [{:conversation/id convo-id
                                                                                                  :conversation/topic v
                                                                                                  :conversation/created time-point
@@ -276,7 +287,8 @@
                                                     #_(e/offload #(try (d/transact !dh-conn [{:conversation/id convo-id
                                                                                               :conversation/messages new-message}])
                                                                     (catch Exception e
-                                                                      (println "Caught exception " e))))
+                                                                      (println "Caught exception " e)))) 
+                                                    (e/offload #(get-chat-completion convo-id message-list nil api-key))
                                                     #_(stream-chat-completion convo-id message-list model api-key))))
                                               nil))))
                                               (set! (.-value @!input-node) "")
@@ -287,48 +299,64 @@
 
 (e/defn BotMsg [msg]
   (e/client
-    (dom/div (dom/props {:class "group md:px-4 border-b border-black/10 bg-white text-gray-800 dark:border-gray-900/50 dark:bg-[#343541] dark:text-gray-100"})
-      (dom/div (dom/props {:class "relative m-auto flex p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl"})
-        (dom/div (dom/props {:class "min-w-[40px] text-right font-bold"})
-          (set! (.-innerHTML dom/node) bot-icon))
-        (dom/div (dom/props {:class "prose whitespace-pre-wrap dark:prose-invert flex-1"})
-          (dom/text msg))
-        (dom/div (dom/props {:class "md:-mr-8 ml-1 md:ml-0 flex flex-col md:flex-row gap-4 md:gap-1 items-center md:items-start justify-end md:justify-start"})
-          (dom/button (dom/props {:class "invisible group-hover:visible focus:visible text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"})
-            (set! (.-innerHTML dom/node) edit-icon))
-          (dom/button (dom/props {:class "invisible group-hover:visible focus:visible text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"})
-            (set! (.-innerHTML dom/node) delete-icon)))))))
+    (let [entity (first (filter #(= (:name %) conversation-entity) (:entities entities-cfg)))
+          {:keys [prompt image full-name name]} entity] 
+      (dom/div (dom/props {:class "flex w-full flex-col items-start"})
+        (let [msg-hovered? (dom/Hovered?.)]
+          (dom/div (dom/props {:class "flex"})
+            (dom/img (dom/props {:class "rounded-full w-8 h-8"
+                                 :src image}))
+            (dom/p (dom/props {:class "px-4 pt-1 rounded-full"})
+              (dom/text msg)))
+          
+          (dom/div (dom/props {:class (str "msg-controls flex gap-1 mt-4 rounded bg-white border p-2"
+                                        (if-not msg-hovered?
+                                          " invisible"
+                                          " visible "))})
+            (e/for-by identity [{:keys [title file-name]}
+                                [{:title "Read aloud"
+                                  :file-name "speech"}
+                                 {:title "Copy"
+                                  :file-name "copy"}
+                                 {:title "Regenerate"
+                                  :file-name "refresh-cw"}]]
+              (ui/button (e/fn [])
+                (dom/props {:class (str "hover:bg-slate-500 rounded-full flex justify-center items-center w-8 h-8")
+                            :title title})
+                (dom/img (dom/props {:class "w-4" :src (str "icons/" file-name ".svg")}))))))))))
 
 (e/defn UserMsg [msg]
-  (e/client 
-    (dom/div (dom/props {:class "flex gap-2 self-end items-center"}) 
-      (let [msg-hovered? (dom/Hovered?.)]
-        (ui/button (e/fn [])
-          (dom/props {:class (str "hover:bg-slate-500 rounded-full flex justify-center items-center w-8 h-8"
-                               (if-not msg-hovered? 
-                                 " invisible"
-                                 " visible"))
-                      :title "Edit message"})
-          (set! (.-innerHTML dom/node) edit-icon)) 
-
-        (dom/p (dom/props {:class "bg-slate-500 px-4 py-2 rounded-full"})
-          (dom/text msg))))))
+  (e/client
+    (dom/div (dom/props {:class "flex w-full flex-col items-end"})
+      (let [msg-hovered? (dom/Hovered?.)] 
+        (dom/div (dom/props {:class "relative max-w-[70%] rounded-3xl bg-[#f4f4f4] px-5 py-2.5 dark:bg-token-main-surface-secondary"})
+          (ui/button (e/fn [])
+            (dom/props {:class (str "absolute -left-12 top-1 hover:bg-[#f4f4f4] rounded-full flex justify-center items-center w-8 h-8"
+                                 (if-not msg-hovered?
+                                   " invisible"
+                                   " visible"))
+                        :title "Edit message"})
+            (dom/img (dom/props {:class "w-4" :src "icons/pencil.svg"})))
+          (dom/p (dom/text msg)))))))
 
 (e/defn RenderMsg [msg]
   (e/client
     (let [[created id msg role] msg]
-      (case role
-        :user (UserMsg. msg)
-        :assistant  (BotMsg. msg)
-        :system nil #_(dom/div (dom/props {:class "group md:px-4 border-b border-black/10 bg-white text-gray-800 dark:border-gray-900/50 dark:bg-[#343541] dark:text-gray-100"})
-                        (dom/div (dom/props {:class "relative m-auto flex p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl"})
-                          (dom/div (dom/props {:class "min-w-[40px] text-right font-bold"})
-                            (set! (.-innerHTML dom/node) bot-icon))
-                          (dom/div (dom/props {:class "prose whitespace-pre-wrap dark:prose-invert flex-1"})
-                            (dom/text (str role " - " msg "  " created)))
-                          (dom/div (dom/props {:class "md:-mr-8 ml-1 md:ml-0 flex flex-col md:flex-row gap-4 md:gap-1 items-center md:items-start justify-end md:justify-start"})
-                            (dom/button (dom/props {:class "invisible group-hover:visible focus:visible text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"})
-                              (set! (.-innerHTML dom/node) delete-icon)))))))))
+      (dom/div (dom/props {:class "w-full"})
+        (dom/div 
+          (dom/props {:class "mx-auto flex flex-1 gap-4 text-base md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]"})
+          (case role
+            :user (UserMsg. msg)
+            :assistant  (BotMsg. msg)
+            :system nil #_(dom/div (dom/props {:class "group md:px-4 border-b border-black/10 bg-white text-gray-800 dark:border-gray-900/50 dark:bg-[#343541] dark:text-gray-100"})
+                            (dom/div (dom/props {:class "relative m-auto flex p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl"})
+                              (dom/div (dom/props {:class "min-w-[40px] text-right font-bold"})
+                                (set! (.-innerHTML dom/node) bot-icon))
+                              (dom/div (dom/props {:class "prose whitespace-pre-wrap dark:prose-invert flex-1"})
+                                (dom/text (str role " - " msg "  " created)))
+                              (dom/div (dom/props {:class "md:-mr-8 ml-1 md:ml-0 flex flex-col md:flex-row gap-4 md:gap-1 items-center md:items-start justify-end md:justify-start"})
+                                (dom/button (dom/props {:class "invisible group-hover:visible focus:visible text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"})
+                                  (set! (.-innerHTML dom/node) delete-icon)))))))))))
 
 (e/defn PreConversation []
   (e/client
@@ -417,7 +445,7 @@
               (dom/div (when folder-name (dom/props {:class "ml-5 gap-2 border-l pl-2"}))
                 (dom/div (dom/props {:class "relative flex items-center"})
                   (if-not (and editing? (= :edit (:action edit-conversation)))
-                    (dom/button (dom/props {:class (str (when (= active-conversation convo-id) "bg-[#343541]/90 ") "flex w-full cursor-pointer items-center gap-3 rounded-lg p-3 text-sm transition-colors duration-200 hover:bg-[#343541]/90")
+                    (dom/button (dom/props {:class (str (when (= active-conversation convo-id) "bg-slate-200 ") "flex w-full cursor-pointer items-center gap-3 rounded-lg p-3 text-sm transition-colors duration-200 ")
                                             :draggable true})
                       (set! (.-innerHTML dom/node) msg-icon)
                       (dom/on "click" (e/fn [_]
@@ -439,7 +467,7 @@
                                                 (let [new-topic (:changes @!edit-conversation)]
                                                   (e/server
                                                     (e/offload #(d/transact !dh-conn [{:db/id [:conversation/id convo-id]
-                                                                                        :conversation/topic new-topic}]))
+                                                                                       :conversation/topic new-topic}])) 
                                                     nil)
                                                   (reset! !edit-conversation false))))))
                         (dom/on "keyup" (e/fn [e]
@@ -496,27 +524,28 @@
               (dom/div (dom/props {:class "relative flex items-center"})
                 (if-not (and editing? (= :edit (:action edit-folder)))
                   (dom/button (dom/props {:class (str (when (= folder-id folder-dragged-to) "bg-[#343541]/90 ") "flex w-full cursor-pointer items-center gap-3 rounded-lg p-3 text-sm transition-colors duration-200 hover:bg-[#343541]/90")})
+                    (dom/on "drop" (e/fn [_]
+                                     (println "drop ")
+                                     #_(let [convo-id @!convo-dragged]
+                                         (e/server (e/offload #(d/transact !dh-conn [{:db/id [:conversation/id convo-id]
+                                                                                      :conversation/folder folder-id}]))
+                                           nil))
+                                     #_(swap! !open-folders conj folder-id)
+                                     #_(reset! !folder-dragged-to nil)
+                                     #_(reset! !convo-dragged nil)))
                     (dom/on "click" (e/fn [_] (if-not open-folder?
                                                 (swap! !open-folders conj folder-id)
                                                 (swap! !open-folders disj folder-id))))
                     (dom/on "dragover" (e/fn [e] (.preventDefault e)))
-                    (dom/on "dragenter" (e/fn [_] 
+                    (dom/on "dragenter" (e/fn [_]
                                           (.requestAnimationFrame js/window
                                             (fn []
-                                               (println "drag enter 1: " @!convo-dragged)
-                                               (println "folder-id 1: " folder-id)
-                                               (reset! !folder-dragged-to folder-id)))))
+                                              (println "drag enter 1: " @!convo-dragged)
+                                              (println "folder-id 1: " folder-id)
+                                              (reset! !folder-dragged-to folder-id)))))
                     #_(dom/on "dragleave" (e/fn [_]
-                                          (reset! !folder-dragged-to nil)))
-                    (dom/on "drop" (e/fn [_]
-                                     (println "drop " )
-                                     #_(let [convo-id @!convo-dragged]
-                                       (e/server (e/offload #(d/transact !dh-conn [{:db/id [:conversation/id convo-id]
-                                                                                     :conversation/folder folder-id}]))
-                                         nil))
-                                     #_(swap! !open-folders conj folder-id)
-                                     #_(reset! !folder-dragged-to nil)
-                                     #_(reset! !convo-dragged nil)))
+                                            (reset! !folder-dragged-to nil)))
+
                     (dom/div
                       (set! (.-innerHTML dom/node) (if-not open-folder? folder-arrow-icon folder-arrow-icon-down)))
                     (dom/text name))
@@ -556,60 +585,79 @@
                 (ConversationList. conversations)))))))))
 
 (e/defn LeftSidebar []
-  (e/client
-    (ui/button
-      (e/fn []
-        (when (mobile-device?) (reset! !prompt-sidebar? false))
-        (reset! !sidebar? (not @!sidebar?)))
-      (dom/props {:class (if-not sidebar?
-                           "transform scale-x-[-1] fixed top-2.5 left-2 z-50 h-7 w-7 text-white hover:text-gray-400 dark:text-white dark:hover:text-gray-300 sm:top-0.5 sm:left-2 sm:h-8 sm:w-8 sm:text-neutral-700 "
-                           "fixed top-5 left-[270px] z-50 h-7 w-7 hover:text-gray-400 dark:text-white dark:hover:text-gray-300 sm:top-0.5 sm:left-[270px] sm:h-8 sm:w-8 sm:text-neutral-700 text-white")})
-      (set! (.-innerHTML dom/node) side-bar-icon)) 
+  (e/client 
     (when sidebar?
       (let [folders (e/server  (e/offload #(sort-by first > (d/q '[:find ?created ?e ?folder-id ?name
-                                                                    :where
-                                                                    [?e :folder/id ?folder-id]
-                                                                    [?e :folder/name ?name]
-                                                                    [?e :folder/created ?created]]
+                                                                   :where
+                                                                   [?e :folder/id ?folder-id]
+                                                                   [?e :folder/name ?name]
+                                                                   [?e :folder/created ?created]]
                                                               db))))
             !search-text (atom nil)
             search-text (e/watch !search-text)
             conversations  (if-not search-text
                              (e/server
                                (e/offload #(sort-by first > (d/q '[:find ?created ?e ?conv-id ?topic
-                                                                    :where
-                                                                    [?e :conversation/id ?conv-id]
-                                                                    [?e :conversation/topic ?topic]
-                                                                    [?e :conversation/created ?created]
-                                                                    (not [?e :conversation/folder])]
+                                                                   :where
+                                                                   [?e :conversation/id ?conv-id]
+                                                                   [?e :conversation/topic ?topic]
+                                                                   [?e :conversation/created ?created]
+                                                                   (not [?e :conversation/folder])]
                                                               db))))
 
                              (e/server
                                (e/offload #(let [convo-eids (d/q '[:find [?c ...]
-                                                                    :in $ search-txt ?includes-fn
-                                                                    :where
-                                                                    [?m :message/text ?msg-text]
-                                                                    [?c :conversation/messages ?m]
-                                                                    [?c :conversation/topic ?topic]
-                                                                    (or-join [?msg-text ?topic]
-                                                                      [(?includes-fn ?msg-text search-txt)]
-                                                                      [(?includes-fn ?topic search-txt)])]
+                                                                   :in $ search-txt ?includes-fn
+                                                                   :where
+                                                                   [?m :message/text ?msg-text]
+                                                                   [?c :conversation/messages ?m]
+                                                                   [?c :conversation/topic ?topic]
+                                                                   (or-join [?msg-text ?topic]
+                                                                     [(?includes-fn ?msg-text search-txt)]
+                                                                     [(?includes-fn ?topic search-txt)])]
                                                               db search-text lowercase-includes?)]
                                              (sort-by first > (d/q '[:find ?created ?e ?conv-id ?topic
-                                                                      :in $ [?e ...]
-                                                                      :where
-                                                                      [?e :conversation/id ?conv-id]
-                                                                      [?e :conversation/topic ?topic]
-                                                                      [?e :conversation/created ?created]]
+                                                                     :in $ [?e ...]
+                                                                     :where
+                                                                     [?e :conversation/id ?conv-id]
+                                                                     [?e :conversation/topic ?topic]
+                                                                     [?e :conversation/created ?created]]
                                                                 db convo-eids))))))
             !clear-conversations? (atom false)
             clear-conversations? (e/watch !clear-conversations?)]
-        (dom/div (dom/props {:class "fixed top-0 left-0 z-40 flex h-full w-[260px] flex-none flex-col space-y-2 bg-[#202123] p-2 text-[14px] transition-all sm:relative sm:top-0"})
-          (dom/div (dom/props {:class "flex items-center"})
-            (dom/button (dom/props {:class "text-sidebar flex w-[190px] flex-shrink-0 cursor-pointer select-none items-center gap-3 rounded-md border border-white/20 p-3 text-white transition-colors duration-200 hover:bg-gray-500/10"})
-              (set! (.-innerHTML dom/node) new-chat-icon)
-              (dom/on "click" (e/fn [_] (reset! !view-main :entity-selection)))
-              (dom/text "New Chat")) 
+        (dom/div (dom/props {:class (str "bg-slate-100 pt-8 px-4 w-[260px] h-full flex flex-col gap-4"
+                                      ;; Old css
+                                      #_"fixed top-0 left-0 z-40 flex h-full w-[260px] flex-none flex-col space-y-2 p-2 text-[14px] transition-all sm:relative sm:top-0")}) ;bg-[#202123]
+          
+
+          (dom/div (dom/props {:class "flex flex-col"})
+            (let [local-btn-style "flex items-center gap-4 py-2 px-4 w-full rounded hover:bg-slate-300"]
+              (ui/button
+                (e/fn []
+                  (reset! !active-conversation nil)
+                  (reset! !view-main :pre-conversation))
+                (dom/props {:class local-btn-style})
+                (let [entity (first (:entities entities-cfg))] 
+                  (dom/img (dom/props {:class "w-8 rounded-full"
+                                       :src (:image entity)}))
+                  (dom/p (dom/text (:name entity)))))
+              (ui/button
+                (e/fn []
+                  (reset! !view-main :entity-selection)
+                  (reset! !active-conversation nil))
+                (dom/props {:class local-btn-style}) 
+                (dom/img (dom/props {:class "w-8 rounded-full"
+                                     :src (:all-entities-image entities-cfg)}))
+                (dom/p (dom/text "All Entities")))))
+
+          (dom/div (dom/props {:class "relative flex items-center gap-4 pt-4"})
+            (dom/input (dom/props {:class "w-full flex-1 rounded-md border border-neutral-600 px-4 py-3 pr-10 text-[14px] leading-3" ;bg-[#202123]
+                                   :placeholder "Search..."
+                                   :value search-text})
+              (dom/on "keyup" (e/fn [e]
+                                (if-some [v (empty->nil (.. e -target -value))]
+                                  (reset! !search-text v)
+                                  (reset! !search-text nil)))))
             (ui/button
               (e/fn []
                 (e/server
@@ -617,35 +665,9 @@
                                                      :folder/name "New folder"
                                                      :folder/created (System/currentTimeMillis)}]))
                   nil))
-              (dom/props {:class "ml-2 flex flex-shrink-0 cursor-pointer items-center gap-3 rounded-md border border-white/20 p-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"})
+              (dom/props {:title "New folder"
+                          :class "cursor-pointer w-8 h-8 flex items-center justify-center bg-slate-300 hover:bg-slate-400 rounded"})
               (set! (.-innerHTML dom/node) search-icon)))
-
-          (ui/button
-            (e/fn []
-              (reset! !active-conversation nil)
-              (reset! !view-main :pre-conversation)) 
-            (let [entity (first (:entities entities-cfg))]
-              (dom/div (dom/props {:class "text-neutral-400 hover:text-neutral-100 hover:bg-[#343541]/90 flex items-center gap-4 py-2 px-4 rounded"})
-                (dom/img (dom/props {:class "w-8 rounded-full"
-                                     :src (:image entity)}))
-                (dom/p (dom/text (:name entity))))))
-          (ui/button
-            (e/fn [] 
-              (reset! !view-main :entity-selection)
-              (reset! !active-conversation nil))
-            (dom/div (dom/props {:class "text-neutral-400 hover:text-neutral-100 hover:bg-[#343541]/90 flex items-center gap-4 py-2 px-4 rounded"})
-              (dom/img (dom/props {:class "w-8 rounded-full"
-                                   :src (:all-entities-image entities-cfg)}))
-              (dom/p (dom/text "All Entities"))))
-
-          (dom/div (dom/props {:class "relative flex items-center"})
-            (dom/input (dom/props {:class "w-full flex-1 rounded-md border border-neutral-600 bg-[#202123] px-4 py-3 pr-10 text-[14px] leading-3 text-white"
-                                   :placeholder "Search..."
-                                   :value search-text})
-              (dom/on "keyup" (e/fn [e]
-                                (if-some [v (empty->nil (.. e -target -value))]
-                                  (reset! !search-text v)
-                                  (reset! !search-text nil))))))
           (when search-text (dom/p (dom/props {:class "text-gray-500 text-center"})
                               (dom/text (str (count  conversations)) #_(map second conversations) " results found")))
 
@@ -658,7 +680,7 @@
               (dom/div
                 (dom/div (dom/props {:class "mt-8 select-none text-center text-white opacity-50"})
                   (set! (.-innerHTML dom/node) no-data-icon)
-                  (dom/text "No Data"))))) 
+                  (dom/text "No Data")))))
           (dom/div (dom/props {:class "flex flex-col items-center space-y-1 border-t border-white/20 pt-1 text-sm"})
             (if-not clear-conversations?
               (ui/button
@@ -686,7 +708,7 @@
                                                            (mapv (fn [eid] [:db.fn/retractEntity eid :conversation/id]) convo-eids)
                                                            (mapv (fn [eid] [:db.fn/retractEntity eid :folder/id]) m-eids)
                                                            (mapv (fn [eid] [:db.fn/retractEntity eid :folder/id]) folder-eids))]
-                                      (d/transact !dh-conn retraction-ops))) 
+                                      (d/transact !dh-conn retraction-ops)))
                                  nil)
                                (reset! !active-conversation nil)
                                (reset! !clear-conversations? false))
@@ -696,7 +718,7 @@
                   (ui/button (e/fn [] (reset! !clear-conversations? false))
                     (dom/props {:class "min-w-[20px] p-1 text-neutral-400 hover:text-neutral-100"})
                     (set! (.-innerHTML dom/node) x-icon)))))
-            #_(ui/button (e/fn [] 
+            #_(ui/button (e/fn []
                            (reset! !view-main :settings)
                            (when (mobile-device?) (reset! !sidebar? false)))
                 (dom/props {:class "flex w-full cursor-pointer select-none items-center gap-3 rounded-md py-3 px-3 text-[14px] leading-3 text-white transition-colors duration-200 hover:bg-gray-500/10"})
@@ -750,6 +772,7 @@
       (e/client
         (dom/div (dom/props {:class "absolute top-0 right-0 h-48 w-1/2 bg-red-500 overflow-auto"}) 
           (dom/p (dom/text "Active conversation: " active-conversation))
+          (dom/p (dom/text "Conversation entity: " conversation-entity))
           (dom/p (dom/text "View main: " view-main))
           (dom/p (dom/text "Convo dragged: " convo-dragged))
           (dom/p (dom/text "Folder dragged to : " folder-dragged-to))
@@ -777,7 +800,7 @@
       (dom/on "dragdrop" (e/fn [_] (println "drop "))) 
       (dom/on "dragenter" (e/fn [_] (println "enter main")))
       (dom/on "dragleave" (e/fn [_] (println "leave main")))
-      (dom/div (dom/props {:class "relative flex-1 overflow-hidden bg-white dark:bg-[#343541]"})
+      (dom/div (dom/props {:class "relative flex-1 overflow-hidden"}) ;dark:bg-[#343541] bg-white
         (dom/div (dom/props {:class "max-h-full overflow-x-hidden h-full"})
           (case view-main
             :entity-selection (EntitySelector.)
@@ -795,13 +818,49 @@
                            " bg-red-500"))})
     (dom/p (dom/text "Debug: " debug?)))))
 
+(e/defn Topbar []
+  (e/client 
+     (dom/div (dom/props {:class "sticky w-full top-0"})
+      (dom/div (dom/props {:class (str "flex justify-between gap-4 px-4 py-4"
+                                    (if sidebar? 
+                                      " w-[260px] bg-slate-100"
+                                      " w-max"))})
+        (ui/button
+          (e/fn []
+            (when (mobile-device?) (reset! !prompt-sidebar? false))
+            (reset! !sidebar? (not @!sidebar?)))
+          (dom/img (dom/props {:class "w-6 h-6"
+                               :src (if-not sidebar?
+                                      "icons/panel-left-open.svg"
+                                      "icons/panel-left-close.svg")})))
+        (ui/button (e/fn [] (reset! !view-main :entity-selection))
+          (dom/img (dom/props {:class "w-6 h-6"
+                               :src "icons/square-pen.svg"})))))))
+
 (e/defn Main [ring-request]
   (e/server
     (binding [db (e/watch !dh-conn)]
       (e/client
         (binding [dom/node js/document.body] 
-          (dom/main (dom/props {:class "flex h-full w-screen flex-col text-sm text-white dark:text-white dark"}) 
+         (Topbar.)
+          (dom/main (dom/props {:class "flex h-full w-screen flex-col text-sm"}) ;dark:text-white  dark
             (dom/div (dom/props {:class "flex h-full w-full pt-[48px] sm:pt-0 items-start"})
+              ;; Topbar 
               (LeftSidebar.)
               (MainView.)
               (DebugController.))))))))
+
+
+(comment 
+  (do 
+    (println "calling openai")
+    (let [resp (api/create-chat-completion {:model "gpt-3.5-turbo"
+                                            :messages [{:role "system" :content "You are a helpful assistant."}
+                                                       {:role "user" :content "Who won the world series in 2020?"}
+                                                       {:role "assistant" :content "The Los Angeles Dodgers won the World Series in 2020."}
+                                                       {:role "user" :content "Where was it played?"}]}
+                 {:api-key api-key})]
+      (println "finished call")
+      (println resp)))
+  
+  )
